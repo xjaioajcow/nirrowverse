@@ -1,11 +1,13 @@
 require("@nomiclabs/hardhat-ethers");
 require("dotenv").config();
+const path = require("path");
 
 module.exports = {
   solidity: {
     compilers: [
       {
-        version: "0.8.20",
+        // 直接引用本地 soljson.js 路径
+        version: "solc/soljson.js",
         settings: {
           optimizer: {
             enabled: true,
@@ -13,8 +15,7 @@ module.exports = {
           }
         }
       }
-    ],
-    useSolcJs: true
+    ]
   },
   networks: {
     hyperevm: {
