@@ -1,4 +1,3 @@
-请在该文件中生成完整的 Solidity 合约代码，文件路径为 contracts/StakeVault.sol，内容要求如下：
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
