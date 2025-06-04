@@ -1,26 +1,29 @@
 require("@nomiclabs/hardhat-ethers");
 require("dotenv").config();
+const { subtask } = require("hardhat/config");
+const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require("hardhat/builtin-tasks/task-names");
+const path = require("path");
+
+subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
+  if (args.solcVersion === "0.8.20") {
+    const compilerPath = path.join(__dirname, "node_modules/solc/soljson-v0.8.20+commit.a1b79de6.js");
+    return {
+      compilerPath,
+      isSolcJs: true,
+      version: args.solcVersion,
+      longVersion: "0.8.20+commit.a1b79de6"
+    };
+  }
+  return runSuper();
+});
 
 module.exports = {
-  solidity: {
-    compilers: [
-      {
-        version: "0.8.20",
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200
-          }
-        },
-        // 本地 solc-js 路径
-        url: "node_modules/solc/soljson.js"
-      }
-    ]
-  },
+  solidity: "0.8.20",
   networks: {
     hyperevm: {
       url: process.env.HYPEEVM_RPC,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : []
     }
   }
+};
 };
