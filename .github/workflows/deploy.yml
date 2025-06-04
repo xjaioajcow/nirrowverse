@@ -1,0 +1,48 @@
+name: Nirrowverse CI/CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  HYPEEVM_RPC: ${{ secrets.HYPEEVM_RPC }}
+  PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+  ROUTER: ${{ secrets.ROUTER }}
+  REDEEMER: ${{ secrets.REDEEMER }}
+  LLT: ${{ secrets.LLT }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Compile contracts
+        run: npx hardhat compile
+
+      - name: Deploy contracts to HyperEVM
+        id: deploy
+        run: |
+          npx hardhat run scripts/deploy.ts --network hyperevm > deploy-output.txt
+          RE_ADDRESS=$(grep "Redeemer deployed to:" deploy-output.txt | awk '{print $3}')
+          echo "redeemer=$RE_ADDRESS" >> $GITHUB_OUTPUT
+
+      - name: Prompt to save Redeemer address
+        if: ${{ env.REDEEMER == '' }}
+        run: |
+          echo "✅ Deployed Redeemer at ${{ steps.deploy.outputs.redeemer }}. 请将此地址添加为 GitHub Secret：REDEEMER"
+
+      - name: Update LLT in Redeemer
+        if: ${{ env.LLT != '' && env.REDEEMER != '' }}
+        run: npx hardhat run scripts/setLlt.ts --network hyperevm
