@@ -19,7 +19,7 @@ async function main() {
 
   // 3. Deploy RUMWL
   const RumWL = await ethers.getContractFactory("RUMWL");
-  const rumWL = await RumWL.deploy();
+  const rumWL = await RumWL.deploy(process.env.BASE_URI || "");
   await rumWL.deployed();
   console.log("RUMWL deployed to:", rumWL.address);
 
@@ -45,18 +45,3 @@ async function main() {
     hourlyDraw.address,
     ethers.utils.parseUnits("1", 18)
   );
-  await redeemer.deployed();
-  console.log("Redeemer deployed to:", redeemer.address);
-
-  console.log("All contracts deployed. Please record the addresses:");
-  console.log("LOTTO:", lotto.address);
-  console.log("StakeVault:", stakeVault.address);
-  console.log("RUMWL:", rumWL.address);
-  console.log("HourlyDraw:", hourlyDraw.address);
-  console.log("Redeemer:", redeemer.address);
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
