@@ -10,19 +10,19 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract LOTTO is ERC20, Ownable {
     /// @dev 构造函数固定名称和符号均为 "LOTTO"
     constructor() ERC20("LOTTO", "LOTTO") {
-        // 部署时总量为 0，只有 owner 可以后续 mint
+        // 部署时初始总量 0
     }
 
-    /// @notice 铸造新的 LOTTO 代币
-    /// @param to 铸造给哪个地址
+    /// @notice 铸造新的 LOTTO 代币（仅 owner）
+    /// @param to 接收地址
     /// @param amount 铸造数量（最小单位，18 decimals）
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }
 
     /// @notice 销毁指定地址的 LOTTO 代币
-    /// @dev 如果 msg.sender == from，则直接销毁；如果 msg.sender != from，则先消耗 allowance 后销毁
-    /// @param from 代币扣减地址
+    /// @dev 如果 msg.sender == from，则直接销毁；如果 msg.sender != from，则先检查 allowance 后销毁
+    /// @param from 被销毁 token 的地址
     /// @param amount 销毁数量（最小单位，18 decimals）
     function burn(address from, uint256 amount) external {
         if (msg.sender != from) {
@@ -32,7 +32,7 @@ contract LOTTO is ERC20, Ownable {
     }
 
     /*
-    // 如果只想让持币者自己销毁，可改成下面简化版本：
+    // 如果只允许持币者自己销毁，可改成：
     function burn(uint256 amount) external {
         _burn(msg.sender, amount);
     }
