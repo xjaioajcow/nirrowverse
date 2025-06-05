@@ -1,170 +1,107 @@
 // SPDX-License-Identifier: MIT
-// SPDX 许可证标识符：MIT
 pragma solidity ^0.8.20;
- 语用   坚固性^0.8.20；
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
- 进口  “@openzeppelin/contracts/token/ERC20/IERC20.sol”；
 import "@openzeppelin/contracts/access/Ownable.sol";
- 进口  “@openzeppelin/contracts/access/Ownable.sol”；
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 interface IStakeVault {
- 界面  StakeVault {
+    /// @notice 返回当前所有用户的有效票数总和
     function totalEffectiveTickets() external view returns (uint256);
-     功能  totalEffectiveTickets() 外部视图返回 (uint256)；
+
+    /// @notice 根据伪随机数 r，在累积票数组里二分搜索出中奖者地址
     function findWinner(uint256 r) external view returns (address);
-     功能  findWinner(uint256 r) 外部视图返回（地址）；
 }
- }
 
 contract HourlyDraw is Ownable {
- 合同  HourlyDraw 是可拥有的 {
-    IStakeVault public stakeVault;
-    StakeVault  公共权益金库；
+    using SafeERC20 for IERC20;
+
+    /// 奖励代币（例如 RUM 或某 EVMTKN），
+//  可以在构造时传入，也可 later 通过 setter 设置
     IERC20 public rewardToken;
-    IERC20  公共奖励代币；
-    address public whitelist;
-     地址   公开白名单；
-    address public router;
-     地址   公共路由器；
-    address public reserve;
-     地址   公共储备；
 
-    uint256 public round;
-    uint256  公开轮；
+    /// 关联的 StakeVault 合约，用于读取持票人的“有效票数”
+//  并执行二分搜索选出 winner
+    IStakeVault public stakeVault;
+
+    /// 上一次抽奖时间戳
     uint256 public lastDrawTime;
-    uint256  公共最后绘制时间；
+
+    /// 当前轮次（从 1 开始）
+    uint256 public round;
+
+    /// 最近一位中奖者地址
     address public lastWinner;
-     地址   公开的最后获胜者；
 
-    event Draw(address winner, uint256 round);
-     事件   抽奖（获胜者地址，uint256 轮次）；
+    event Draw(address indexed winner, uint256 indexed round, uint256 reward);
 
-    constructor() {
-     构造函数() {
-    constructor(
-     构造函数（
-        address _vault,
-         地址  _vault，
-        address _rewardToken,
-         地址  _rewardToken，
-        address _whitelist,
-         地址  _白名单，
-        address _router,
-         地址  _路由器，
-        address _reserve
-         地址  _预订
-    ) {
-    ) {
-        stakeVault = IStakeVault(_vault);
-        stakeVault = IStakeVault(_vault);
+    /**
+     * @param _rewardToken 奖励使用的 ERC20 代币合约地址
+     * @param _stakeVault  StakeVault 合约地址
+     */
+    constructor(address _rewardToken, address _stakeVault) {
+        require(_rewardToken != address(0), "Invalid reward token");
+        require(_stakeVault != address(0), "Invalid stake vault");
+
         rewardToken = IERC20(_rewardToken);
-         奖励代币 = IERC20(_rewardToken);
-        whitelist = _whitelist;
-         白名单 = _白名单；
-        router = _router;
-         路由器 = _路由器；
-        reserve = _reserve;
-         储备 = _储备；
-        round = 1;
-         回合 = 1；
+        stakeVault = IStakeVault(_stakeVault);
         lastDrawTime = block.timestamp;
-         上次绘制时间 = 区块.时间戳;
+        round = 1;
     }
 
-    function setRewardToken(address _token) external onlyOwner {
-     功能  setRewardToken（地址_token）外部 onlyOwner {
-        rewardToken = IERC20(_token);
-         奖励代币 = IERC20(_token);
-    }
-    }
-
-    function setStakeVault(address _vault) external onlyOwner {
-     功能  setStakeVault（地址_vault）外部 onlyOwner {
-        stakeVault = IStakeVault(_vault);
-        stakeVault = IStakeVault(_vault);
-    }
+    /// @notice 设置新的奖励代币地址（仅 owner）
+    function setRewardToken(address _rewardToken) external onlyOwner {
+        require(_rewardToken != address(0), "Invalid address");
+        rewardToken = IERC20(_rewardToken);
     }
 
-    function setWhitelist(address _whitelist) external onlyOwner {
-     功能   设置白名单（地址_whitelist）外部 onlyOwner {
-        whitelist = _whitelist;
-         白名单 = _白名单；
-    }
-    }
-
-    function setReserve(address _reserve) external onlyOwner {
-     功能  setReserve（地址_reserve）外部 onlyOwner {
-        reserve = _reserve;
-         储备 = _储备；
-    }
+    /// @notice 设置新的 StakeVault 合约地址（仅 owner）
+    function setStakeVault(address _stakeVault) external onlyOwner {
+        require(_stakeVault != address(0), "Invalid address");
+        stakeVault = IStakeVault(_stakeVault);
     }
 
-    /// @notice 每小时可由 owner 调用一次，用 blockhash+timestamp 简单生成伪随机
-    function draw(address[] calldata participants) external onlyOwner {
-     功能  draw(address[] calldata 参与者) external onlyOwner {
-        require(participants.length > 0, "No participants");
-         要求（参与者.长度  > 0, "无参与者");
-        require(block.timestamp >= lastDrawTime + 3600, "Too soon, wait an hour");
-         需要（块.时间戳  >= lastDrawTime + 3600, "太快了，等一个小时");
+    /**
+     * @notice 每小时调用一次，选出一个持票人作为 winner，并将合约中剩余 rewardToken 全部发给他
+     * @dev 使用 block.timestamp、round、lastWinner 组合 Keccak 哈希生成伪随机数
+     */
     function draw() external onlyOwner {
-     功能  draw() 外部 onlyOwner {
-        require(block.timestamp >= lastDrawTime + 3600, "Too soon");
-         需要（块.时间戳  >= lastDrawTime + 3600, "太快了");
+        // 保证至少间隔 1 小时
+        require(block.timestamp >= lastDrawTime + 3600, "Wait an hour");
 
-        uint256 total = stakeVault.totalEffectiveTickets();
-        uint256  总计 = stakeVault.totalEffectiveTickets();
-        require(total > 0, "No tickets");
-         需要（总计  > 0, "没有票");
+        // 获取存入合约的奖励代币余额
+        uint256 reward = rewardToken.balanceOf(address(this));
+        require(reward > 0, "No rewards to distribute");
 
-        // 用当前时间、上轮赢家和区块难度做伪随机
-        uint256 rand = uint256(
-        uint256 rand = uint256（
-            keccak256(
-            keccak256(
-                abi.encodePacked(
-                abi.encodePacked（
-                    block.timestamp,
-                     区块.时间戳，
-                    block.difficulty,
-                     区块难度 ，
-                    block.prevrandao,
-                     阻止。 prevrandao ，
-                    lastWinner,
-                     最后的赢家，
-                    round
-                     圆形的
-                )
+        // 获取所有持票人的有效票总数
+        uint256 totalTickets = stakeVault.totalEffectiveTickets();
+        require(totalTickets > 0, "No tickets staked");
+
+        // 生成伪随机数（Keccak256）
+        bytes32 hashInput = keccak256(
+            abi.encodePacked(
+                block.timestamp,
+                block.difficulty,
+                lastWinner,
+                round
             )
         );
-        （此处似有缺失，请提供更正后的文本）。
+        uint256 rand = uint256(hashInput) % totalTickets;
 
-        uint256 idx = rand % participants.length;
-        uint256 idx = rand % 参与者.长度 ；
-        address winner = participants[idx];
-         地址   获胜者 = 参与者[idx] ；
-        uint256 r = rand % total;
-        uint256 r = 随机数 % 总计 ；
-        address winner = stakeVault.findWinner(r);
-         地址   获胜者 = stakeVault.findWinner(r) ;
+        // 调用 StakeVault.findWinner(uint) 执行二分搜素，返回中奖地址
+        address winner = stakeVault.findWinner(rand);
 
+        // 更新状态并发奖
         lastWinner = winner;
-         最后的赢家 = 赢家；
         lastDrawTime = block.timestamp;
-         上次绘制时间 = 区块.时间戳;
+
+        // 转账给 winner
+        rewardToken.safeTransfer(winner, reward);
+
+        emit Draw(winner, round, reward);
+
+        // 轮次 +1
         round += 1;
-         圆形的  += 1；
-
-        uint256 reward = rewardToken.balanceOf(address(this));
-        uint256  奖励 = rewardToken.balanceOf(地址(此));
-        if (reward > 0) {
-         如果  （奖励 > 0）{
-            rewardToken.transfer(winner, reward);
-            rewardToken.transfer(获胜者，  报酬）;
-        }
-        }
-
-        emit Draw(winner, round - 1);
-         发射   平局（获胜者，第 1 轮）；
     }
 }
